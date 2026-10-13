@@ -1,0 +1,218 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  ANALYST
+}
+
+enum TransactionStatus {
+  SUCCESS
+  FAILED
+  PENDING
+  REFUNDED
+}
+
+enum AnomalySeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AnomalyType {
+  DUPLICATE
+  HIGH_AMOUNT
+  PAYMENT_FAILURE
+  DISCOUNT_ABUSE
+  REFUND_ANOMALY
+  UNUSUAL_PATTERN
+}
+
+enum InvestigationStatus {
+  OPEN
+  INVESTIGATING
+  RESOLVED
+  DISMISSED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role     @default(ANALYST)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  investigations    Investigation[]
+  notes             InvestigationNote[]
+  logs              AuditLog[]
+}
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  products    Product[]
+}
+
+model Product {
+  id          String   @id @default(uuid())
+  categoryId  String
+  name        String
+  price       Float
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  category    Category @relation(fields: [categoryId], references: [id])
+  items       TransactionItem[]
+}
+
+model Discount {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  amount      Float
+  isPercentage Boolean @default(false)
+  maxUsage    Int?
+  usageCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  transactions Transaction[]
+}
+
+model Transaction {
+  id            String   @id @default(uuid())
+  customerId    String?  // Can link to a Customer model later if needed
+  customerName  String
+  customerEmail String
+  amount        Float
+  status        TransactionStatus
+  date          DateTime
+  discountId    String?
+  riskScore     Float    @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  discount      Discount?         @relation(fields: [discountId], references: [id])
+  items         TransactionItem[]
+  payments      Payment[]
+  refunds       Refund[]
+  anomalies     Anomaly[]
+}
+
+model TransactionItem {
+  id            String   @id @default(uuid())
+  transactionId String
+  productId     String
+  quantity      Int
+  price         Float
+  
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  product       Product     @relation(fields: [productId], references: [id])
+}
+
+model Payment {
+  id            String   @id @default(uuid())
+  transactionId String
+  method        String   // e.g., CREDIT_CARD, BANK_TRANSFER, E_WALLET
+  amount        Float
+  status        TransactionStatus
+  failureReason String?
+  createdAt     DateTime @default(now())
+  
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+}
+
+model Refund {
+  id            String   @id @default(uuid())
+  transactionId String
+  amount        Float
+  reason        String
+  createdAt     DateTime @default(now())
+  
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+}
+
+model Anomaly {
+  id            String   @id @default(uuid())
+  transactionId String
+  type          AnomalyType
+  severity      AnomalySeverity
+  reason        String
+  estimatedLoss Float    @default(0)
+  status        String   @default("UNREVIEWED") // UNREVIEWED, INVESTIGATING, DISMISSED, RESOLVED
+  createdAt     DateTime @default(now())
+  
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  investigation Investigation?
+}
+
+model Investigation {
+  id              String   @id @default(uuid())
+  title           String
+  description     String
+  severity        AnomalySeverity
+  status          InvestigationStatus @default(OPEN)
+  estimatedLoss   Float    @default(0)
+  anomalyId       String   @unique
+  assignedToId    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  anomaly         Anomaly  @relation(fields: [anomalyId], references: [id], onDelete: Cascade)
+  assignedTo      User?    @relation(fields: [assignedToId], references: [id])
+  notes           InvestigationNote[]
+}
+
+model InvestigationNote {
+  id              String   @id @default(uuid())
+  investigationId String
+  authorId        String
+  content         String
+  createdAt       DateTime @default(now())
+  
+  investigation   Investigation @relation(fields: [investigationId], references: [id], onDelete: Cascade)
+  author          User          @relation(fields: [authorId], references: [id])
+}
+
+model Alert {
+  id          String   @id @default(uuid())
+  title       String
+  message     String
+  severity    AnomalySeverity
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String
+  action      String   // LOGIN, CSV_IMPORT, UPDATE_STATUS, etc.
+  details     String
+  createdAt   DateTime @default(now())
+  
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model Report {
+  id          String   @id @default(uuid())
+  title       String
+  type        String   // MONTHLY_SUMMARY, LEAKAGE_ANALYSIS, etc.
+  url         String?  // Storage link if generated
+  data        String?  // JSON stringified data
+  createdAt   DateTime @default(now())
+}
